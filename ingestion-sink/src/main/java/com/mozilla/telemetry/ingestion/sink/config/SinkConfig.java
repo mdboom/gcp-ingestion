@@ -8,6 +8,7 @@ import com.google.cloud.storage.StorageOptions;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.pubsub.v1.PubsubMessage;
+import com.mozilla.telemetry.ingestion.sink.io.Amplitude;
 import com.mozilla.telemetry.ingestion.sink.io.BigQuery;
 import com.mozilla.telemetry.ingestion.sink.io.Gcs;
 import com.mozilla.telemetry.ingestion.sink.io.Pubsub;
@@ -30,6 +31,7 @@ public class SinkConfig {
 
   public static final String OUTPUT_TABLE = "OUTPUT_TABLE";
 
+  private static final String AMPLITUDE_OUTPUT = "AMPLITUDE_OUTPUT"; // TODO rename this config
   private static final String INPUT_COMPRESSION = "INPUT_COMPRESSION";
   private static final String INPUT_SUBSCRIPTION = "INPUT_SUBSCRIPTION";
   private static final String BATCH_MAX_BYTES = "BATCH_MAX_BYTES";
@@ -53,10 +55,10 @@ public class SinkConfig {
   private static final String STREAMING_DOCTYPES = "STREAMING_DOCTYPES";
   private static final String STRICT_SCHEMA_DOCTYPES = "STRICT_SCHEMA_DOCTYPES";
 
-  private static final List<String> INCLUDE_ENV_VARS = ImmutableList.of(INPUT_COMPRESSION,
-      INPUT_SUBSCRIPTION, BATCH_MAX_BYTES, BATCH_MAX_DELAY, BATCH_MAX_MESSAGES, OUTPUT_BUCKET,
-      OUTPUT_COMPRESSION, OUTPUT_FORMAT, BIG_QUERY_OUTPUT_MODE, LOAD_MAX_BYTES, LOAD_MAX_DELAY,
-      LOAD_MAX_FILES, OUTPUT_TABLE, OUTPUT_TOPIC, OUTPUT_TOPIC_EXECUTOR_THREADS,
+  private static final List<String> INCLUDE_ENV_VARS = ImmutableList.of(AMPLITUDE_OUTPUT,
+      INPUT_COMPRESSION, INPUT_SUBSCRIPTION, BATCH_MAX_BYTES, BATCH_MAX_DELAY, BATCH_MAX_MESSAGES,
+      OUTPUT_BUCKET, OUTPUT_COMPRESSION, OUTPUT_FORMAT, BIG_QUERY_OUTPUT_MODE, LOAD_MAX_BYTES,
+      LOAD_MAX_DELAY, LOAD_MAX_FILES, OUTPUT_TABLE, OUTPUT_TOPIC, OUTPUT_TOPIC_EXECUTOR_THREADS,
       MAX_OUTSTANDING_ELEMENT_COUNT, MAX_OUTSTANDING_REQUEST_BYTES, SCHEMAS_LOCATION,
       STREAMING_BATCH_MAX_BYTES, STREAMING_BATCH_MAX_DELAY, STREAMING_BATCH_MAX_MESSAGES,
       STREAMING_DOCTYPES, STRICT_SCHEMA_DOCTYPES);
@@ -297,6 +299,20 @@ public class SinkConfig {
         }
         return new Output(env, this, mixedOutput);
       }
+    },
+
+    amplitudeDelete {
+
+      @Override
+      Output getOutput(Env env) {
+        return new Output(env, this, new Amplitude.Delete(
+            // TODO pass initialized amplitude service here
+            null, env.getLong(BATCH_MAX_BYTES, DEFAULT_BATCH_MAX_BYTES),
+            env.getInt(BATCH_MAX_MESSAGES, DEFAULT_BATCH_MAX_MESSAGES),
+            env.getDuration(BATCH_MAX_DELAY, DEFAULT_BATCH_MAX_DELAY),
+            PubsubMessageToTemplatedString.of(env.getString(AMPLITUDE_OUTPUT))));
+      }
+
     };
 
     // Each case in the enum must implement this method to define how to write out messages.
@@ -330,6 +346,8 @@ public class SinkConfig {
           default:
             throw new IllegalArgumentException("Unsupported BIG_QUERY_OUTPUT_MODE: " + outputMode);
         }
+      } else if (env.containsKey(AMPLITUDE_OUTPUT)) {
+        return OutputType.amplitudeDelete;
       } else {
         // default to bigQueryLoad because it's the only output without any required configs
         return OutputType.bigQueryLoad;
