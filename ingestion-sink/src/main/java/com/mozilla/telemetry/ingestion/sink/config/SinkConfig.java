@@ -281,6 +281,8 @@ public class SinkConfig {
                 }
               } else if (t.getCause() instanceof BigQueryException && t.getCause().getMessage()
                   .startsWith("Request payload size exceeds the limit")) {
+                // t.getCause() was not a LoggedException, so this message exceeded the
+                // request payload size limit when sent individually.
                 return fileOutput.apply(message);
               }
               throw (RuntimeException) t;

@@ -22,6 +22,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.DoubleStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public abstract class BatchWrite<InputT, EncodedT, BatchKeyT, BatchResultT>
     implements Function<InputT, CompletableFuture<Void>> {
@@ -86,6 +88,8 @@ public abstract class BatchWrite<InputT, EncodedT, BatchKeyT, BatchResultT>
   private final long maxBytes;
   private final int maxMessages;
   private final Duration maxDelay;
+  private final String shortClassName = this.getClass().getName().replaceAll(".*[.]", "");
+  private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
   /** Constructor. */
   public BatchWrite(long maxBytes, int maxMessages, Duration maxDelay,
@@ -97,7 +101,6 @@ public abstract class BatchWrite<InputT, EncodedT, BatchKeyT, BatchResultT>
     this.executor = executor;
 
     // create OpenCensus measures with a class name prefix
-    final String shortClassName = this.getClass().getName().replaceAll(".*[.]", "");
     final String batchType = shortClassName.replace('$', '_').toLowerCase();
     totalBytes = MeasureLong.create(batchType + "_total_bytes",
         "The number of bytes received in " + shortClassName, "B");
@@ -176,7 +179,13 @@ public abstract class BatchWrite<InputT, EncodedT, BatchKeyT, BatchResultT>
 
     // wait for full then synchronize and close
     private final CompletableFuture<BatchResultT> result = full
-        .thenComposeAsync(this::synchronousClose, executor);
+        .thenComposeAsync(this::synchronousClose, executor).exceptionally(exception -> {
+          // with one input rethrow exception, otherwise use LoggedException to only log it once
+          throw this.size == 1 ? (RuntimeException) exception
+              : LoggedException.logAndWrap(logger, () -> String
+                  .format("failed to deliver %d messages in %s", this.size, shortClassName),
+                  (RuntimeException) exception.getCause());
+        });
 
     @VisibleForTesting
     public int size = 0;

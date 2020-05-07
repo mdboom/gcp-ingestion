@@ -10,6 +10,7 @@ import com.google.pubsub.v1.ProjectSubscriptionName;
 import com.google.pubsub.v1.ProjectTopicName;
 import com.google.pubsub.v1.PubsubMessage;
 import com.mozilla.telemetry.ingestion.sink.transform.PubsubMessageToTemplatedString;
+import com.mozilla.telemetry.ingestion.sink.util.LoggedException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.concurrent.CompletableFuture;
@@ -47,7 +48,9 @@ public class Pubsub {
                   consumer.ack();
                 } else {
                   // exception is always a CompletionException caused by the real exception
-                  LOG.warn("Exception while attempting to deliver message", exception.getCause());
+                  // use LoggedException::log to ensure exception is only logged once
+                  LoggedException.log(LOG, () -> "failed to deliver message",
+                      (RuntimeException) exception.getCause());
                   consumer.nack();
                 }
               })))
